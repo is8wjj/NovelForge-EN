@@ -34,6 +34,8 @@ if getattr(sys, 'frozen', False):
 
 from uvicorn import run
 from main import app
+from app.core import settings
  
 if __name__ == "__main__":
-	run(app, host="0.0.0.0", port=54321, log_level="info") 
+	# Local single-user application: loopback by default (override with HOST / PORT, unsupported beyond this machine).
+	run(app, host=settings.app.host, port=settings.app.port, log_level="info") 

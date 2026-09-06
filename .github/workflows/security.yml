@@ -1,0 +1,84 @@
+name: Security and repository hygiene
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "17 6 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  hygiene:
+    name: No committed databases, books, credentials or local artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # gitleaks scans the PR commit range; a shallow clone breaks the range
+      - name: Forbidden tracked files
+        run: |
+          set -euo pipefail
+          bad=$(git ls-files | grep -Ei '(\.(db|sqlite|sqlite3|db-wal|db-shm|epub|mobi|azw3|pem|p12|key)$|(^|/)\.env$|(^|/)\.env\.[a-z]+$|(^|/)books/|(^|/)novelforge\.db)' | grep -Ev '^(backend/\.env\.example|docs/|\.github/)' || true)
+          if [ -n "$bad" ]; then echo "Forbidden files are tracked:"; echo "$bad"; exit 1; fi
+          echo "ok: no databases, EPUBs, keys or .env files tracked"
+      - name: Ignore rules cover local artifacts
+        run: |
+          set -euo pipefail
+          for p in backend/novelforge.db backend/x.db-wal .env backend/.env some/book.epub .hoplite/attachments/x .hoplite/scratch/x backend/openapi.json frontend/node_modules/x backend/venv/x; do
+            git check-ignore -q "$p" || { echo "NOT ignored: $p"; exit 1; }
+          done
+          echo "ok: local artifacts are ignored"
+      - name: Secret scan (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_SUMMARY: "true"
+
+  python-audit:
+    name: Python dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Resolve the runtime dependency set and audit it
+        # PySide6 is an optional AuthND helper; excluded here to keep the audit fast and network-light.
+        # GHSA-xf7x-x43h-rpqh (json-repair < 0.60.1) is accepted: langchain-qwq pins json-repair < 0.54
+        # and the vulnerable path (untrusted repair input) is only reached through our own bounded
+        # JSON-mode fallback on provider text. Tracked in docs/ci.md.
+        run: |
+          python -m pip install --upgrade pip pip-audit
+          grep -v -i pyside6 backend/requirements.txt > /tmp/req.txt
+          pip install -r /tmp/req.txt
+          pip-audit --strict --progress-spinner off --ignore-vuln GHSA-xf7x-x43h-rpqh
+
+  npm-audit:
+    name: npm audit (fail on critical; high findings reported — see docs/ci.md)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Audit the lockfile (production dependencies)
+        working-directory: frontend
+        run: |
+          set -euo pipefail
+          # Policy: critical fails the build. High is gated by the allowlist below (baseline findings inherited
+          # with the lockfile; `npm audit fix` currently breaks the dev toolchain — see docs/ci.md ratchet).
+          npm audit --audit-level=critical --omit=dev
+          npm audit --omit=dev --json > audit.json || true
+          node -e '
+            const a = JSON.parse(require("fs").readFileSync("audit.json", "utf8"));
+            const allow = new Set(["axios","builder-util-runtime","electron","electron-updater","extract-zip","form-data","js-yaml","linkify-it","lodash","lodash-es","nanoid","picomatch","postcss","rollup","tar-fs"]);
+            const high = Object.values(a.vulnerabilities || {}).filter((v) => v.severity === "high" && !allow.has(v.name)).map((v) => v.name);
+            if (high.length) { console.error("Unallowlisted HIGH findings:", high.join(", ")); process.exit(1); }
+            console.log("ok: no critical and no unallowlisted high findings");
+          '

@@ -4,7 +4,7 @@
   "scripts": {
     "setup": {
       "enabled": true,
-      "command": "cd backend && (test -d venv || python3 -m venv venv) && ./venv/bin/pip install -q -r requirements.txt pytest pytest-timeout && cd ../frontend && npm ci --ignore-scripts --no-audit --no-fund"
+      "command": "cd backend && (test -d venv || python3 -m venv venv) && (grep -v -i pyside6 requirements.txt > /tmp/nf-requirements.txt) && ./venv/bin/pip install -q -r /tmp/nf-requirements.txt -r requirements-dev.txt && cd ../frontend && npm ci --ignore-scripts --no-audit --no-fund"
     },
     "run": {
       "enabled": true,

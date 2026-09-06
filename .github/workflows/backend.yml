@@ -1,0 +1,64 @@
+name: Backend
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Python ${{ matrix.python }} · import, migrate, test
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12"]
+    env:
+      # No live credentials: every test substitutes the provider boundary.
+      NOVELFORGE_DB_PATH: ${{ github.workspace }}/backend/ci-app.db
+      QT_QPA_PLATFORM: offscreen
+      AUTHND_TOKEN_MODE: pool
+      AUTHND_TOKEN_POOL_URL: http://127.0.0.1:9/never
+      PYTHONWARNINGS: "error::ImportWarning"
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
+      - name: Install runtime and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+      - name: Import the application (every router registered)
+        run: python -W error -c "import main; assert any(getattr(r, 'path', None) == '/api/autonomous/preflight' for r in main.app.routes) or '/api/autonomous/preflight' in main.app.openapi()['paths'], 'preflight route missing'; print(len(main.app.openapi()['paths']), 'OpenAPI routes registered')"
+      - name: Alembic fresh upgrade + drift check
+        run: NOVELFORGE_DB_PATH=$RUNNER_TEMP/fresh.db python scripts/migration_smoke.py
+      - name: Alembic populated-database migration tests
+        run: python -m pytest tests/test_migrations.py -q -p no:cacheprovider
+      - name: Startup smoke (lifespan, root, OpenAPI, preflight route)
+        run: python -m pytest tests/test_startup_smoke.py -q -p no:cacheprovider
+      - name: Full test suite with coverage
+        run: python -m pytest tests -q -p no:cacheprovider --timeout 900 --cov=app --cov-report=xml --cov-report=term-missing:skip-covered
+      - name: Static checks (ruff, scoped to the autonomous pipeline; see docs/ci.md ratchet plan)
+        run: ruff check app/services/autonomous app/api/endpoints/autonomous.py app/db/migrations.py tests/test_autonomous_*.py tests/test_migrations.py tests/test_startup_smoke.py
+      - name: OpenAPI export (the frontend generated types are produced from this document)
+        run: NOVELFORGE_DB_PATH=$RUNNER_TEMP/openapi.db python scripts/export_openapi.py $RUNNER_TEMP/openapi.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-coverage-py${{ matrix.python }}
+          path: backend/coverage.xml
+          if-no-files-found: ignore

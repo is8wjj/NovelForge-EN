@@ -465,6 +465,16 @@ Note: if you previously chose local development, this version requires reinstall
 <a id="getting-started"></a>
 ## 🚀 Getting Started
 
+> **Operations documentation** (clean install and verification commands, database
+> migrations, Kimi K3 configuration and preflight, hard budgets, pause/resume/recovery,
+> the local-only security boundary, CI and the live qualification procedure) lives in
+> [`docs/`](./docs): [setup](./docs/setup.md) · [migrations](./docs/migrations.md) ·
+> [Kimi K3 & autonomous pipeline](./docs/kimi-k3.md) · [security boundary](./docs/security.md) ·
+> [CI & branch protection](./docs/ci.md) · [live qualification](./docs/live-qualification.md).
+>
+> The backend is a **local, single-user** service: it binds to `127.0.0.1:54321` by default and has
+> no authentication. Do not expose it on other interfaces.
+
 Whether you want to try it directly or get involved in development, it's easy to start.
 
 ### 0. Neo4j Desktop (optional, not required)

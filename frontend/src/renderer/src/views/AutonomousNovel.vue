@@ -70,8 +70,46 @@
         </el-collapse>
       </el-form>
       <p class="muted">{{ t('autonomous.rightsNotice') }}</p>
+      <el-collapse class="prefs">
+        <el-collapse-item :title="t('autonomous.budget.title')" data-testid="budget-panel">
+          <div class="grid">
+            <el-form-item :label="t('autonomous.budget.max_calls')"><el-input-number v-model="budget.max_calls" :min="0" :step="10" /></el-form-item>
+            <el-form-item :label="t('autonomous.budget.max_total_tokens')"><el-input-number v-model="budget.max_total_tokens" :min="0" :step="10000" /></el-form-item>
+            <el-form-item :label="t('autonomous.budget.max_output_tokens')"><el-input-number v-model="budget.max_output_tokens" :min="0" :step="10000" /></el-form-item>
+            <el-form-item :label="t('autonomous.budget.max_input_tokens')"><el-input-number v-model="budget.max_input_tokens" :min="0" :step="10000" /></el-form-item>
+            <el-form-item :label="t('autonomous.budget.max_repair_calls')"><el-input-number v-model="budget.max_repair_calls" :min="0" /></el-form-item>
+            <el-form-item :label="t('autonomous.budget.max_cost_usd')"><el-input-number v-model="budget.max_cost_usd" :min="0" :step="1" :precision="2" /></el-form-item>
+            <el-form-item :label="t('autonomous.budget.price_input')"><el-input-number v-model="budget.price_input" :min="0" :step="0.1" :precision="3" /></el-form-item>
+            <el-form-item :label="t('autonomous.budget.price_output')"><el-input-number v-model="budget.price_output" :min="0" :step="0.1" :precision="3" /></el-form-item>
+          </div>
+          <el-alert v-if="budget.max_cost_usd > 0 && !(budget.price_input > 0 || budget.price_output > 0)" type="warning" :closable="false" show-icon :title="t('autonomous.budget.priceRequired')" />
+        </el-collapse-item>
+      </el-collapse>
+      <el-card shadow="never" class="preflight" data-testid="preflight-panel">
+        <template #header>
+          <div class="head-row">
+            <b>{{ t('autonomous.preflight.title') }}</b>
+            <el-button size="small" :disabled="!form.llm_config_id || !!auto.busy.value" :loading="auto.busy.value === 'preflight'" data-testid="preflight-btn" @click="runPreflight">{{ t('autonomous.preflight.run') }}</el-button>
+          </div>
+        </template>
+        <template v-if="auto.preflight.value">
+          <el-alert v-if="auto.preflight.value.passed" type="success" :closable="false" show-icon data-testid="preflight-result" :title="t('autonomous.preflight.passed', { provider: auto.preflight.value.provider, model: auto.preflight.value.model, endpoint: auto.preflight.value.endpoint_class, latency: auto.preflight.value.latency_ms })" />
+          <el-alert v-else type="error" :closable="false" show-icon data-testid="preflight-result" :title="t('autonomous.preflight.failed', { category: auto.preflight.value.failure_category || 'unknown', diagnostic: auto.preflight.value.diagnostic || '' })" />
+          <ul class="kv checks">
+            <li v-for="c in auto.preflight.value.checks.filter((x) => x.name !== 'usage_metadata')" :key="c.name">
+              <span>{{ t('autonomous.preflight.check.' + c.name, c.name) }}</span>
+              <el-tag size="small" effect="plain" :type="c.skipped ? 'info' : c.passed ? 'success' : c.advisory ? 'warning' : 'danger'">{{ c.skipped ? t('autonomous.preflight.skipped') : c.passed ? 'ok' : c.category || 'failed' }}</el-tag>
+            </li>
+            <li><span>{{ t('autonomous.preflight.check.usage_metadata') }}</span><span class="muted">{{ t('autonomous.preflight.usage.' + auto.preflight.value.usage_reporting) }}</span></li>
+            <li v-if="auto.preflight.value.fallback"><span>{{ t('autonomous.preflight.fallback') }}</span><el-tag size="small" effect="plain" :type="auto.preflight.value.fallback.passed ? 'success' : 'danger'">{{ auto.preflight.value.fallback.model }}</el-tag></li>
+          </ul>
+          <el-alert v-for="(w, i) in auto.preflight.value.warnings" :key="i" type="warning" :closable="false" show-icon :title="w" class="warning" data-testid="preflight-warning" />
+        </template>
+        <p v-else class="muted">{{ t('autonomous.preflight.required') }}</p>
+      </el-card>
       <div class="actions">
-        <el-button type="primary" size="large" :disabled="!auto.file.value || !form.llm_config_id" :loading="auto.busy.value === 'start'" data-testid="start-btn" @click="start">{{ t('autonomous.startAnalysis') }}</el-button>
+        <el-checkbox v-if="!auto.preflight.value?.passed" v-model="preflightAcknowledged" data-testid="preflight-ack">{{ t('autonomous.preflight.acknowledge') }}</el-checkbox>
+        <el-button type="primary" size="large" :disabled="!canStart" :loading="auto.busy.value === 'start'" data-testid="start-btn" @click="start">{{ t('autonomous.startAnalysis') }}</el-button>
       </div>
     </div>
 
@@ -166,9 +204,9 @@
 
     <!-- Screen 5: Finished -->
     <div v-else class="screen" data-testid="screen-finished">
-      <el-result icon="success" :title="t('autonomous.finishedTitle')" :sub-title="t('autonomous.finishedSubtitle', { chapters: auto.job.value?.chapter_count || 0, words: Number(auto.report.value?.audit?.words || 0).toLocaleString() })" />
+      <el-result :icon="qualityIcon" :title="t('autonomous.quality.' + (auto.job.value?.quality_status || 'completed'))" :sub-title="t('autonomous.finishedSubtitle', { chapters: auto.job.value?.chapter_count || 0, words: Number(auto.report.value?.audit?.words || 0).toLocaleString() })" data-testid="quality-status" />
       <div class="downloads">
-        <a v-for="a in auto.artifacts.value" :key="a.id" :href="artifactDownloadUrl(a.id)" class="download" :data-testid="`download-${a.kind}`" download>
+        <a v-for="a in auto.artifacts.value" :key="a.id" :href="artifactDownloadUrl(a.id, auto.job.value?.id)" class="download" :data-testid="`download-${a.kind}`" download>
           <el-button type="primary" plain>{{ t('autonomous.kinds.' + a.kind, a.kind) }} · {{ (a.size_bytes / 1024).toFixed(0) }} KB</el-button>
         </a>
       </div>
@@ -238,6 +276,28 @@ const form = reactive<{ llm_config_id: number | undefined; mode: api.AutonomousM
 const stepIndex = computed(() => ['upload', 'analysis', 'choose', 'generating', 'finished'].indexOf(auto.screen.value))
 const ingestion = computed(() => auto.job.value?.stage_results?.INGEST?.quality)
 const visibleOptions = computed(() => (showRejected.value ? auto.storylines.value : auto.acceptedOptions.value))
+const budget = reactive({ max_calls: 0, max_total_tokens: 0, max_output_tokens: 0, max_input_tokens: 0, max_repair_calls: 0, max_cost_usd: 0, price_input: 0, price_output: 0 })
+const preflightAcknowledged = ref(false)
+const canStart = computed(() => !!auto.file.value && !!form.llm_config_id && !auto.busy.value && (auto.preflight.value?.passed === true || preflightAcknowledged.value))
+const qualityIcon = computed<'success' | 'warning' | 'error'>(() => {
+  const q = auto.job.value?.quality_status
+  if (q === 'quality_gate_failed') return 'error'
+  if (q === 'completed_with_warnings' || q === 'manual_review_required') return 'warning'
+  return 'success'
+})
+
+function budgetSpec(): api.BudgetSpec | undefined {
+  const spec: api.BudgetSpec = {}
+  for (const k of ['max_calls', 'max_total_tokens', 'max_output_tokens', 'max_input_tokens', 'max_repair_calls', 'max_cost_usd'] as const) {
+    if (budget[k] > 0) spec[k] = budget[k]
+  }
+  if (budget.price_input > 0 || budget.price_output > 0) spec.price_per_million = { input: budget.price_input, output: budget.price_output }
+  return Object.keys(spec).length ? spec : undefined
+}
+async function runPreflight(): Promise<void> {
+  if (!form.llm_config_id) return
+  await auto.runPreflight({ llm_config_id: form.llm_config_id, timeout_seconds: 45 })
+}
 
 function onPick(e: Event) {
   const f = (e.target as HTMLInputElement).files?.[0]
@@ -249,12 +309,14 @@ function onDrop(e: DragEvent) {
   if (f) void auto.pickFile(f)
 }
 async function start() {
-  if (!form.llm_config_id) return
-  const params: Record<string, unknown> = { llm_config_id: form.llm_config_id, mode: form.mode, quality_preset: form.quality_preset, storyline_count: form.storyline_count }
+  if (!form.llm_config_id || !canStart.value) return
+  const params: Record<string, unknown> = { llm_config_id: form.llm_config_id, mode: form.mode, quality_preset: form.quality_preset, storyline_count: form.storyline_count, preflight_acknowledged: auto.preflight.value?.passed !== true }
+  const spec = budgetSpec()
+  if (spec) params.budget = spec
   for (const k of ['genre', 'genre_intensity', 'content_rating', 'ending_preference', 'romance_level', 'words_per_chapter', 'title', 'author', 'notes'] as const) {
     if (form[k]) params[k] = form[k]
   }
-  await auto.start(params as any)
+  await auto.start(params as Omit<api.CreateJobRequest, 'filename' | 'content_base64'>)
 }
 
 onMounted(async () => {

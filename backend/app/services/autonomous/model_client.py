@@ -9,10 +9,12 @@ retries, fallbacks). Attempt rows are written on a *separate* short-lived
 session so a failed attempt survives the surrounding stage rollback. No prompt
 or response text is stored: hashes and a bounded, redacted diagnostic only.
 
-Budget: every provider attempt reserves a call + estimated tokens on the job
-before it runs and reconciles actual usage afterwards (``budget``). When a
-hard limit would be crossed the attempt is refused with ``BUDGET_EXCEEDED`` and
-no provider call is made.
+Budget: every provider attempt reserves, before it runs, its estimated input
+tokens plus the **full** output allowance it may consume (``budget.reserve``
+clamps the provider ``max_tokens`` to what the job limits still allow) and
+reconciles actual usage afterwards. When no viable allowance remains the
+attempt is refused with ``BUDGET_EXCEEDED`` and no provider call is made.
+Retries, schema repairs and fallback attempts each reserve individually.
 
 Provider boundary: ``LLMModelClient.provider_call`` is the only place that
 talks to a provider; tests substitute it to exercise retry, fallback, timeout
@@ -74,7 +76,11 @@ ROLE_POLICIES: Dict[str, RolePolicy] = {
 FORGE_ROLE_MAP = {"drafting": "drafter", "repair": "repair_editor", "analysis": "source_analyst", "planning": "chapter_planner", "validator": "continuity_validator", "evaluator": "style_evaluator"}
 
 CLARIFIED_SCHEMA_SUFFIX = "\n\n[FORMAT REPAIR]\nYour previous answer did not validate against the required JSON schema{errors}. Return ONLY one JSON object that validates against the schema: no prose, no markdown fences, no comments, every required field present."
+JSON_MODE_SUFFIX = "Return ONLY one JSON object (no prose, no markdown fences) that validates against this JSON schema:\n{schema}"
+JSON_SCHEMA_PROMPT_CHARS = 12000
 DIAGNOSTIC_CHARS = 300
+# Provider statuses for which a JSON-mode retry of a failed native structured call is pointless.
+NO_JSON_FALLBACK_STATUSES = ("401", "403", "429", "timeout")
 
 
 class ModelClient(Protocol):
@@ -131,6 +137,57 @@ def classify_provider_error(exc: BaseException) -> Tuple[str, Optional[str], Opt
 def is_auth_error(status: Optional[str], exc: BaseException) -> bool:
     text = str(exc).lower()
     return status in ("401", "403") or "unauthorized" in text or "invalid api key" in text
+
+
+def _message_text(result: Any) -> str:
+    content = getattr(result, "content", result)
+    if isinstance(content, list):
+        content = "".join(str(c.get("text", "") if isinstance(c, dict) else c) for c in content)
+    return str(content)
+
+
+def _provider_result(content: Any, message: Any) -> ProviderResult:
+    """Build a ``ProviderResult`` from a LangChain message, marking whether usage metadata was present."""
+    usage = getattr(message, "usage_metadata", None) or {}
+    meta = getattr(message, "response_metadata", None) or {}
+    reported = isinstance(usage, dict) and ("input_tokens" in usage or "output_tokens" in usage)
+    finish = None
+    if isinstance(meta, dict):
+        finish = meta.get("finish_reason") or meta.get("stop_reason")
+    return ProviderResult(
+        content=content,
+        input_tokens=int(usage.get("input_tokens") or 0) if reported else 0,
+        output_tokens=int(usage.get("output_tokens") or 0) if reported else 0,
+        provider_request_id=(str(meta.get("id") or meta.get("request_id") or "") or None) if isinstance(meta, dict) else None,
+        usage_reported=reported,
+        finish_reason=str(finish) if finish else None,
+    )
+
+
+_FENCE_RX = re.compile(r"```(?:json)?\s*(.*?)```", re.S)
+
+
+def _extract_json_object(text: str) -> Optional[Any]:
+    """First JSON object in ``text`` (raw, fenced, or embedded in prose); ``None`` when nothing parses."""
+    candidates = [text.strip()] + [m.strip() for m in _FENCE_RX.findall(text)]
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end > start:
+        candidates.append(text[start:end + 1])
+    for cand in candidates:
+        if not cand:
+            continue
+        try:
+            return json.loads(cand)
+        except json.JSONDecodeError:
+            continue
+    try:
+        from json_repair import repair_json
+
+        repaired = repair_json(text[start:end + 1] if start != -1 and end > start else text, return_objects=True)
+        return repaired if isinstance(repaired, (dict, list)) else None
+    except Exception:  # noqa: BLE001 - repair is best effort; the caller reports malformed output
+        return None
 
 
 # ---------------------------------------------------------------- telemetry
@@ -196,13 +253,20 @@ class InvocationRecorder:
 
 @dataclass
 class ProviderResult:
-    """What a provider attempt returns to the client: text (or parsed object), usage and ids."""
+    """What a provider attempt returns to the client: text (or parsed object), usage and ids.
+
+    ``usage_reported`` is ``None`` when the caller did not say; the client then
+    infers it from non-zero token counts. ``False`` marks a response whose
+    provider gave no usage metadata (budgets fall back to estimates).
+    """
 
     content: Any
     input_tokens: int = 0
     output_tokens: int = 0
     provider_request_id: Optional[str] = None
     provider_status: Optional[str] = None
+    usage_reported: Optional[bool] = None
+    finish_reason: Optional[str] = None
 
 
 ProviderCall = Callable[..., Awaitable[ProviderResult]]
@@ -245,7 +309,15 @@ class LLMModelClient:
 
     # ------------------------------------------------------------ provider
     async def _default_provider_call(self, *, llm_config_id: int, system_prompt: str, user_prompt: str, schema: Optional[Type[BaseModel]], temperature: float, max_tokens: int, timeout: float) -> ProviderResult:
-        """The only production path that touches a provider (through the LangChain factory)."""
+        """The only production path that touches a provider (through the LangChain factory).
+
+        Structured requests first use the provider's native structured-output
+        mechanism (tool calling / JSON schema). OpenAI-compatible gateways such
+        as Kimi K3 do not all implement it: when the native path fails for a
+        reason that is not auth/rate-limit/timeout, the request is retried once
+        as a JSON-mode text completion and validated here with Pydantic. The
+        bounded schema-repair loop in ``_invoke`` handles residual failures.
+        """
         from langchain_core.messages import HumanMessage, SystemMessage
 
         from app.services.ai.core.chat_model_factory import build_chat_model
@@ -253,27 +325,41 @@ class LLMModelClient:
         model = build_chat_model(session=self.session, llm_config_id=int(llm_config_id), temperature=temperature, max_tokens=max_tokens, timeout=timeout)
         messages = [SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)] if system_prompt else [HumanMessage(content=user_prompt)]
         if schema is not None:
-            envelope = await asyncio.wait_for(model.with_structured_output(schema, include_raw=True).ainvoke(messages), timeout=timeout + 5)
+            try:
+                envelope = await asyncio.wait_for(model.with_structured_output(schema, include_raw=True).ainvoke(messages), timeout=timeout + 5)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001 - decide whether a JSON-mode retry is worth trying
+                _, status, _ = classify_provider_error(exc)
+                if status in NO_JSON_FALLBACK_STATUSES:
+                    raise
+                return await self._json_mode_call(model, messages, schema, timeout, native_error=exc)
             raw = envelope.get("raw") if isinstance(envelope, dict) else None
             parsed = envelope.get("parsed") if isinstance(envelope, dict) else envelope
             perr = envelope.get("parsing_error") if isinstance(envelope, dict) else None
-            if perr is not None:
-                raise ValueError(f"structured output invalid: {perr}")
-            if parsed is None:
-                raise ValueError("structured output invalid: empty parsed response")
-            usage = getattr(raw, "usage_metadata", None) or {}
-            meta = getattr(raw, "response_metadata", None) or {}
-            return ProviderResult(content=parsed, input_tokens=int(usage.get("input_tokens") or 0) if isinstance(usage, dict) else 0, output_tokens=int(usage.get("output_tokens") or 0) if isinstance(usage, dict) else 0, provider_request_id=str(meta.get("id") or meta.get("request_id") or "") or None)
+            if perr is not None or parsed is None:
+                return await self._json_mode_call(model, messages, schema, timeout, native_error=perr or ValueError("empty parsed response"))
+            return _provider_result(parsed, raw)
         result = await asyncio.wait_for(model.ainvoke(messages), timeout=timeout + 5)
-        content = getattr(result, "content", result)
-        if isinstance(content, list):
-            content = "".join(str(c.get("text", "") if isinstance(c, dict) else c) for c in content)
-        text = str(content)
+        text = _message_text(result)
         if not text.strip():
             raise ValueError("LLM returned an empty response")
-        usage = getattr(result, "usage_metadata", None) or {}
-        meta = getattr(result, "response_metadata", None) or {}
-        return ProviderResult(content=text, input_tokens=int(usage.get("input_tokens") or 0) if isinstance(usage, dict) else 0, output_tokens=int(usage.get("output_tokens") or 0) if isinstance(usage, dict) else 0, provider_request_id=str(meta.get("id") or meta.get("request_id") or "") or None)
+        return _provider_result(text, result)
+
+    async def _json_mode_call(self, model: Any, messages: list, schema: Type[BaseModel], timeout: float, *, native_error: Any) -> ProviderResult:
+        """JSON-mode fallback for providers without reliable native structured output."""
+        from langchain_core.messages import HumanMessage
+
+        schema_json = json.dumps(schema.model_json_schema(), ensure_ascii=False)
+        suffix = HumanMessage(content=JSON_MODE_SUFFIX.format(schema=schema_json[:JSON_SCHEMA_PROMPT_CHARS]))
+        result = await asyncio.wait_for(model.ainvoke(list(messages) + [suffix]), timeout=timeout + 5)
+        text = _message_text(result)
+        if not text.strip():
+            raise ValueError(f"structured output invalid: empty response after native failure ({redact(str(native_error), limit=120)})")
+        data = _extract_json_object(text)
+        if data is None:
+            raise ValueError(f"structured output invalid: no JSON object in response ({redact(str(native_error), limit=120)})")
+        return _provider_result(schema.model_validate(data), result)
 
     # --------------------------------------------------------------- core
     async def _invoke(self, *, role: str, schema: Optional[Type[T]], system_prompt: str, user_prompt: str, prompt_version: str, stage: str) -> Any:
@@ -293,22 +379,31 @@ class LLMModelClient:
         max_attempts = policy.max_retries + 1
         while attempts < max_attempts:
             attempts += 1
-            est = _estimate_tokens(system_prompt, prompt) + max_tokens // 2
+            est_in = _estimate_tokens(system_prompt, prompt)
+            attempt_max_tokens = max_tokens
             reservation: Optional[budget_mod.Reservation] = None
             if self.job_id is not None:
                 try:
                     with self._budget_factory() as bs:
-                        reservation = budget_mod.reserve(bs, int(self.job_id), role=role, stage=stage, estimated_tokens=est)
+                        # Worst case: estimated input + the full output allowance this attempt may consume.
+                        reservation = budget_mod.reserve(bs, int(self.job_id), role=role, stage=stage, estimated_input_tokens=est_in, requested_output_tokens=max_tokens, llm_config_id=cid)
+                    attempt_max_tokens = reservation.max_output_tokens
                 except budget_mod.BudgetExceeded as exc:
                     self.recorder.record_attempt(inv_id, attempt=attempts, provider=self._provider(cid), model_name=self._model_name(cid), llm_config_id=cid, fallback=cid != primary_cid, role=role, stage=stage, completed_at=datetime.now(), status="budget_refused", error_category=fail.BUDGET_EXCEEDED, diagnostic=redact(str(exc)))
                     self.recorder.close_invocation(inv_id, input_tokens=total_in, output_tokens=total_out, latency_ms=int((time.monotonic() - started) * 1000), retries=attempts - 1, total_attempts=attempts, fallback_used=fallback_used, validation_status="error", error=redact(str(exc)))
                     raise
+            if reservation is not None:
+                with self._budget_factory() as bs:
+                    budget_mod.mark_dispatched(bs, reservation)
             a_started = time.monotonic()
             a_status, a_cat, a_pstatus, a_diag, a_retry_after, a_req_id = "ok", None, None, None, None, None
             a_in = a_out = 0
+            a_usage_reported = True
+            a_output_known = True
             try:
-                pr = await self.provider_call(llm_config_id=cid, system_prompt=system_prompt, user_prompt=prompt, schema=schema, temperature=policy.temperature, max_tokens=max_tokens, timeout=policy.timeout)
+                pr = await self.provider_call(llm_config_id=cid, system_prompt=system_prompt, user_prompt=prompt, schema=schema, temperature=policy.temperature, max_tokens=attempt_max_tokens, timeout=policy.timeout)
                 a_in, a_out, a_req_id, a_pstatus = int(pr.input_tokens or 0), int(pr.output_tokens or 0), pr.provider_request_id, pr.provider_status
+                a_usage_reported = pr.usage_reported if pr.usage_reported is not None else bool(a_in or a_out)
                 content = pr.content
                 if schema is not None:
                     if isinstance(content, schema):
@@ -328,17 +423,20 @@ class LLMModelClient:
                     if not a_out:
                         a_out = _estimate_tokens(result)
                 if not a_in:
-                    a_in = _estimate_tokens(system_prompt, prompt)
+                    a_in = est_in
                 total_in += a_in
                 total_out += a_out
-                self._finish_reservation(reservation, a_in, a_out, True)
-                self.recorder.record_attempt(inv_id, attempt=attempts, provider=self._provider(cid), model_name=self._model_name(cid), llm_config_id=cid, fallback=cid != primary_cid, role=role, stage=stage, completed_at=datetime.now(), latency_ms=int((time.monotonic() - a_started) * 1000), status="ok", provider_status=a_pstatus, provider_request_id=a_req_id, input_tokens=a_in, output_tokens=a_out, timeout_seconds=policy.timeout, response_hash=_sha(json.dumps(result.model_dump(mode="json"), ensure_ascii=False) if schema is not None else result))
+                self._finish_reservation(reservation, a_in, a_out, True, usage_reported=a_usage_reported)
+                self.recorder.record_attempt(inv_id, attempt=attempts, provider=self._provider(cid), model_name=self._model_name(cid), llm_config_id=cid, fallback=cid != primary_cid, role=role, stage=stage, completed_at=datetime.now(), latency_ms=int((time.monotonic() - a_started) * 1000), status="ok", provider_status=a_pstatus, provider_request_id=a_req_id, input_tokens=a_in, output_tokens=a_out, timeout_seconds=policy.timeout, response_hash=_sha(json.dumps(result.model_dump(mode="json"), ensure_ascii=False) if schema is not None else result), usage_reported=a_usage_reported, max_tokens=attempt_max_tokens)
                 self.recorder.close_invocation(inv_id, llm_config_id=cid, model_name=self._model_name(cid), input_tokens=total_in, output_tokens=total_out, latency_ms=int((time.monotonic() - started) * 1000), retries=attempts - 1, total_attempts=attempts, selected_attempt=attempts, fallback_used=fallback_used, validation_status="ok")
                 return result
             except asyncio.CancelledError:
-                self._finish_reservation(reservation, a_in, a_out, False)
-                self.recorder.record_attempt(inv_id, attempt=attempts, provider=self._provider(cid), model_name=self._model_name(cid), llm_config_id=cid, fallback=cid != primary_cid, role=role, stage=stage, completed_at=datetime.now(), latency_ms=int((time.monotonic() - a_started) * 1000), status="error", error_category="cancelled")
+                # Cancelled mid-flight: the provider may have produced the whole output.
+                self._finish_reservation(reservation, a_in or est_in, a_out, False, output_known=False, usage_reported=False)
+                self.recorder.record_attempt(inv_id, attempt=attempts, provider=self._provider(cid), model_name=self._model_name(cid), llm_config_id=cid, fallback=cid != primary_cid, role=role, stage=stage, completed_at=datetime.now(), latency_ms=int((time.monotonic() - a_started) * 1000), status="error", error_category="cancelled", max_tokens=attempt_max_tokens)
                 self.recorder.close_invocation(inv_id, input_tokens=total_in, output_tokens=total_out, latency_ms=int((time.monotonic() - started) * 1000), retries=attempts - 1, total_attempts=attempts, fallback_used=fallback_used, validation_status="error", error="cancelled")
+                raise
+            except budget_mod.BudgetAccountingError:
                 raise
             except (ValidationError, json.JSONDecodeError) as exc:
                 last_exc, last_category = exc, fail.MALFORMED_OUTPUT
@@ -350,12 +448,16 @@ class LLMModelClient:
                 a_status, a_cat = ("timeout" if a_pstatus == "timeout" else "error"), last_category
                 cfg = self._config(cid)
                 a_diag = redact(str(exc), cfg.api_key if cfg else None)
-            # Failed attempt: charge what we know, record, decide on the next rung.
-            a_in = a_in or _estimate_tokens(system_prompt, prompt)
+                # Timeouts and dropped connections: the output actually generated is unknown.
+                a_output_known = a_pstatus not in ("timeout",) and "connection" not in str(exc).lower()
+                a_usage_reported = False
+            # Failed attempt: charge what we know (the full reserved output when unknown), record, decide on the next rung.
+            a_in = a_in or est_in
+            charged_out = a_out if a_output_known else max(a_out, reservation.output_tokens if reservation else a_out)
             total_in += a_in
-            total_out += a_out
-            self._finish_reservation(reservation, a_in, a_out, False)
-            self.recorder.record_attempt(inv_id, attempt=attempts, provider=self._provider(cid), model_name=self._model_name(cid), llm_config_id=cid, fallback=cid != primary_cid, role=role, stage=stage, completed_at=datetime.now(), latency_ms=int((time.monotonic() - a_started) * 1000), status=a_status, error_category=a_cat, provider_status=a_pstatus, retry_after_seconds=a_retry_after, input_tokens=a_in, output_tokens=a_out, timeout_seconds=policy.timeout, diagnostic=a_diag)
+            total_out += charged_out
+            self._finish_reservation(reservation, a_in, a_out, False, output_known=a_output_known, usage_reported=a_usage_reported)
+            self.recorder.record_attempt(inv_id, attempt=attempts, provider=self._provider(cid), model_name=self._model_name(cid), llm_config_id=cid, fallback=cid != primary_cid, role=role, stage=stage, completed_at=datetime.now(), latency_ms=int((time.monotonic() - a_started) * 1000), status=a_status, error_category=a_cat, provider_status=a_pstatus, retry_after_seconds=a_retry_after, input_tokens=a_in, output_tokens=charged_out, timeout_seconds=policy.timeout, diagnostic=a_diag, usage_reported=a_usage_reported, max_tokens=attempt_max_tokens)
             logger.warning(f"[Autonomous] {role} attempt {attempts}/{max_attempts} failed ({last_category}, status={a_pstatus}) for job {self.job_id}")
             if attempts >= max_attempts:
                 break
@@ -376,14 +478,13 @@ class LLMModelClient:
         self.recorder.close_invocation(inv_id, llm_config_id=cid, model_name=self._model_name(cid), input_tokens=total_in, output_tokens=total_out, latency_ms=int((time.monotonic() - started) * 1000), retries=attempts - 1, total_attempts=attempts, fallback_used=fallback_used, validation_status="error", error=redact(str(last_exc)))
         raise fail.StageFailure(last_category, f"{role} call failed after {attempts} attempt(s): {redact(str(last_exc))}", detail={"attempts": attempts, "fallback_used": fallback_used, "schema": schema_name})
 
-    def _finish_reservation(self, reservation: Optional[budget_mod.Reservation], a_in: int, a_out: int, ok: bool) -> None:
+    def _finish_reservation(self, reservation: Optional[budget_mod.Reservation], a_in: int, a_out: int, ok: bool, *, output_known: bool = True, usage_reported: bool = True) -> None:
+        """Reconcile the attempt's reservation. An accounting failure is surfaced (typed) rather than logged away:
+        the reservation stays open, which is the conservative state - recovery abandons it deterministically."""
         if reservation is None:
             return
-        try:
-            with self._budget_factory() as bs:
-                budget_mod.reconcile(bs, reservation, input_tokens=a_in, output_tokens=a_out, succeeded=ok)
-        except Exception as exc:  # noqa: BLE001 - never lose a model result over accounting
-            logger.warning(f"[Autonomous] budget reconcile failed for job {self.job_id}: {type(exc).__name__}")
+        with self._budget_factory() as bs:
+            budget_mod.reconcile(bs, reservation, input_tokens=a_in, output_tokens=a_out, succeeded=ok, output_known=output_known, usage_reported=usage_reported)
 
     async def structured(self, *, role: str, schema: Type[T], system_prompt: str, user_prompt: str, prompt_version: str, stage: str = "") -> T:
         return await self._invoke(role=role, schema=schema, system_prompt=system_prompt, user_prompt=user_prompt, prompt_version=prompt_version, stage=stage)

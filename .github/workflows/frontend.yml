@@ -1,0 +1,52 @@
+name: Frontend
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: frontend-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: typecheck · lint (scoped) · vitest · web + electron build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Clean install from the lockfile
+        # --ignore-scripts skips electron-builder install-app-deps (native rebuild needs no network here).
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Typecheck (node + web)
+        run: npm run typecheck
+      - name: Lint (autonomous workflow, scoped; see docs/ci.md for the ratchet plan)
+        run: |
+          npx eslint \
+            --no-cache \
+            --max-warnings 1000 \
+            src/renderer/src/api/autonomous.ts \
+            src/renderer/src/composables/useAutonomousNovel.ts \
+            src/renderer/src/composables/__tests__/useAutonomousNovel.test.ts \
+            src/renderer/src/components/autonomous \
+            --rule '@typescript-eslint/no-explicit-any: off' \
+            --rule '@typescript-eslint/explicit-function-return-type: off' \
+            --rule 'prettier/prettier: off'
+      - name: Vitest
+        run: npx vitest run
+      - name: Web build
+        run: npm run build:web
+      - name: Electron build (main/preload/renderer bundles, no packaging)
+        run: npx electron-vite build

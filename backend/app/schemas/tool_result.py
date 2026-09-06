@@ -1,11 +1,11 @@
-﻿"""
+"""
 Standardized type definitions for tool call results.
 
 Uses Pydantic to define the structure of tool return values, ensuring type safety and clear fields.
 """
 from enum import Enum
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ToolResultStatus(str, Enum):
@@ -39,8 +39,7 @@ class ToolResult(BaseModel):
         description="Error message (detailed error provided on failure)"
     )
 
-    class Config:
-        use_enum_values = True  # Use enum values during serialization
+    model_config = ConfigDict(use_enum_values=True)  # Use enum values during serialization
 
 
 class ConfirmationRequest(ToolResult):
@@ -61,8 +60,7 @@ class ConfirmationRequest(ToolResult):
         description="Warning message (e.g. 'This operation is irreversible')"
     )
 
-    class Config:
-        use_enum_values = True
+    model_config = ConfigDict(use_enum_values=True)
 
 
 class CardOperationResult(ToolResult):
@@ -99,8 +97,7 @@ class CardOperationResult(ToolResult):
         description="Number of failed instructions"
     )
 
-    class Config:
-        use_enum_values = True
+    model_config = ConfigDict(use_enum_values=True)
 
 
 class CardSearchResult(ToolResult):
@@ -111,8 +108,7 @@ class CardSearchResult(ToolResult):
         description="Card list"
     )
 
-    class Config:
-        use_enum_values = True
+    model_config = ConfigDict(use_enum_values=True)
 
 
 # Helper function: convert ToolResult to Dict

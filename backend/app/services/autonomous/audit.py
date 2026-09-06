@@ -29,11 +29,10 @@ from app.services.bible.bible_service import BibleService
 from app.services.forge import claims as claims_mod
 from app.services.forge import firewall as fw
 from app.services.forge import provenance
-from app.services.forge import sync as sync_mod
+from app.services.forge import validators as v
 from app.services.forge.compiler import ChapterContextCompiler
 from app.services.forge.pipeline import REPAIR_SYSTEM_PROMPT, build_repair_prompt, source_profile_for, validate_draft
 from app.services.forge.textmetrics import measure, split_paragraphs, split_sentences, tokenize
-from app.services.forge import validators as v
 
 AUDIT_VERSION = "whole-novel-audit-1"
 GLOBAL_REPAIR_PROMPT_VERSION = "autonomous-global-repair-1"

@@ -555,7 +555,16 @@ class AutonomousNovelJob(SQLModel, table=True):
     budget: dict = Field(default_factory=dict, sa_column=Column(JSON))
     reserved_calls: int = Field(default=0, sa_column=Column(sa.Integer, nullable=False, server_default="0"))
     reserved_tokens: int = Field(default=0, sa_column=Column(sa.Integer, nullable=False, server_default="0"))
+    # Split reservations so input/output/cost caps are enforced before every provider attempt.
+    reserved_input_tokens: int = Field(default=0, sa_column=Column(sa.Integer, nullable=False, server_default="0"))
+    reserved_output_tokens: int = Field(default=0, sa_column=Column(sa.Integer, nullable=False, server_default="0"))
+    reserved_cost_usd: float = Field(default=0.0, sa_column=Column(sa.Float, nullable=False, server_default="0"))
+    # Known accumulated cost; ``cost_unknown_calls`` > 0 means the total is unknown (never reported as zero).
+    cost_usd: float = Field(default=0.0, sa_column=Column(sa.Float, nullable=False, server_default="0"))
+    cost_unknown_calls: int = Field(default=0, sa_column=Column(sa.Integer, nullable=False, server_default="0"))
+    usage_estimated_calls: int = Field(default=0, sa_column=Column(sa.Integer, nullable=False, server_default="0"))
     repair_calls: int = Field(default=0, sa_column=Column(sa.Integer, nullable=False, server_default="0"))
+    reserved_repair_calls: int = Field(default=0, sa_column=Column(sa.Integer, nullable=False, server_default="0"))
     # Terminal quality verdict: completed | completed_with_warnings | quality_gate_failed | manual_review_required
     quality_status: Optional[str] = Field(default=None, index=True)
     quality_summary: dict = Field(default_factory=dict, sa_column=Column(JSON))
@@ -641,6 +650,37 @@ class ModelInvocationAttempt(SQLModel, table=True):
     timeout_seconds: Optional[float] = None
     response_hash: str = Field(default="")
     diagnostic: Optional[str] = Field(default=None)
+    # Whether the provider reported usage (False -> tokens above are estimates) and the clamped max_tokens sent.
+    usage_reported: Optional[bool] = Field(default=None)
+    max_tokens: Optional[int] = Field(default=None)
+
+
+class BudgetReservation(SQLModel, table=True):
+    """Ledger of one provider attempt's budget reservation (open -> closed | abandoned).
+
+    The job row holds the aggregate reserved counters; this ledger makes every
+    reservation individually recoverable so a crashed worker cannot leave phantom
+    reservations behind and a late reconcile cannot release twice.
+    """
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    job_id: int = Field(index=True)
+    role: str = Field(default="")
+    stage: str = Field(default="", index=True)
+    stage_key: str = Field(default="", index=True)
+    llm_config_id: Optional[int] = Field(default=None)
+    status: str = Field(default="open", index=True)  # open|dispatched|closed|released|uncertain_charged
+    reserved_input_tokens: int = Field(default=0)
+    reserved_output_tokens: int = Field(default=0)
+    reserved_cost_usd: float = Field(default=0.0)
+    charged_input_tokens: int = Field(default=0)
+    charged_output_tokens: int = Field(default=0)
+    charged_cost_usd: Optional[float] = Field(default=None)
+    succeeded: Optional[bool] = Field(default=None)
+    usage_reported: Optional[bool] = Field(default=None)
+    created_at: datetime = Field(default_factory=datetime.now, nullable=False)
+    dispatched_at: Optional[datetime] = Field(default=None)
+    closed_at: Optional[datetime] = Field(default=None)
 
 
 class RecoveryAction(SQLModel, table=True):

@@ -14,7 +14,7 @@ applies.
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, List, Optional, Sequence
+from typing import Any, Callable, Dict, List, Optional
 
 from sqlmodel import Session, select
 
@@ -23,7 +23,6 @@ from app.services.autonomous import failpoints
 from app.services.autonomous import failures as fail
 from app.services.autonomous.chapter_plan import existing_outlines, replan_from
 from app.services.autonomous.model_client import ForgeDrafterAdapter, ModelClient
-from app.services.bible.bible_service import BibleService
 from app.services.forge import provenance
 from app.services.forge.pipeline import PipelineOptions, PipelineResult, run_chapter
 

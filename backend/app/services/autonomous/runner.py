@@ -42,13 +42,10 @@ from app.services import project_service
 from app.services.autonomous import architecture as arch_mod
 from app.services.autonomous import audit as audit_mod
 from app.services.autonomous import budget as budget_mod
-from app.services.autonomous import chapter_loop
-from app.services.autonomous import chapter_plan
+from app.services.autonomous import chapter_loop, chapter_plan, failpoints, recovery
 from app.services.autonomous import export as export_mod
-from app.services.autonomous import failpoints
 from app.services.autonomous import failures as fail
 from app.services.autonomous import lease as lease_mod
-from app.services.autonomous import recovery
 from app.services.autonomous import source_stages as src
 from app.services.autonomous import storylines as story_mod
 from app.services.autonomous.lease import JobLeaseLost, Lease
@@ -355,7 +352,11 @@ class JobRunner:
                 except JobLeaseLost:
                     pass
                 raise
-            except Exception as exc:  # noqa: BLE001 - classified into the ladder
+            except fail.StageFailure as exc:
+                self.session.rollback()
+                await self._handle_failure(stage, attempt_no, attempt_id, exc)
+                return self.job
+            except Exception as exc:  # noqa: BLE001 - internal crash: classified into the ladder under the fence
                 self.session.rollback()
                 await self._handle_failure(stage, attempt_no, attempt_id, exc)
                 return self.job
@@ -363,8 +364,9 @@ class JobRunner:
                 await self._stop_heartbeat()
         except JobLeaseLost as lost:
             # Another worker owns the job now: publish nothing, leave its state alone.
+            # Lease loss is not a pipeline failure and consumes no retry budget.
             self.session.rollback()
-            logger.warning(f"[Autonomous] job {self.job_id}: worker {self.owner} lost the lease (generation {lost.generation}); aborting without publication")
+            logger.info(f"[Autonomous] job {self.job_id}: worker {self.owner} lost the lease (generation {lost.generation}); exiting without publication")
             await self._stop_heartbeat()
             raise
 
@@ -436,8 +438,11 @@ class JobRunner:
         action = policy.action_for(attempt_no)
         ctx = recovery.RecoveryContext(session=self.session, job=job, stage=stage, stage_attempt=attempt_no, failure=failure, action=action)
         outcome = recovery.execute(ctx)
+        # Handlers mutate the ORM job (options / next stage). Capture the intent, then discard the dirty
+        # instance so the audit-row commit below cannot flush an unfenced job update; publish via the fence.
+        fields: Dict[str, Any] = {"options": dict(job.options or {}), "stage": job.stage}
+        self.session.expire(job)
         self._mark_attempt(attempt_id, "failed", failure_category=failure.category, detail=failure.as_dict(), recovery_action=action)
-        fields: Dict[str, Any] = {"options": job.options, "stage": job.stage}
         if outcome.pause:
             self._publish(status="paused", error=failure.as_dict(), progress_message=f"Paused after {attempt_no} attempt(s) at {stage}: {str(failure)[:300]}", **fields)
             lease_mod.release(self.session, self.lease)

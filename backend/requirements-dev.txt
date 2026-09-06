@@ -1,0 +1,7 @@
+# Test and static-check dependencies (CI + local). Runtime deps live in requirements.txt.
+pytest>=8
+pytest-timeout>=2.3
+pytest-cov>=5
+httpx
+ruff>=0.6
+pip-audit>=2.7

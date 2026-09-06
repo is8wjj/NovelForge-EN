@@ -15,7 +15,7 @@ ending contract.
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence
 
 from sqlalchemy.orm.attributes import flag_modified
 from sqlmodel import Session, select

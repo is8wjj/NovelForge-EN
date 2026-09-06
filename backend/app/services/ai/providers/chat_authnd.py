@@ -32,7 +32,7 @@ from langchain_core.messages import (
 )
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from langchain_core.runnables import Runnable, RunnableLambda
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.services.ai.providers import authnd_auth
 
@@ -152,8 +152,7 @@ class ChatAuthND(BaseChatModel):
     streaming: bool = False
     structured_max_attempts: int = 2
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
     @property
     def _llm_type(self) -> str:

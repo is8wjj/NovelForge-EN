@@ -27,7 +27,7 @@ from typing import Any, Callable, Dict, List, Optional
 from sqlalchemy.orm.attributes import flag_modified
 from sqlmodel import Session, select
 
-from app.db.models import Card, CanonFact
+from app.db.models import CanonFact, Card
 from app.services.bible.bible_service import BibleService
 from app.services.forge import canon as canon_store
 from app.services.forge import claims as claims_mod

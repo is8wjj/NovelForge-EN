@@ -1,5 +1,6 @@
 fastapi
 uvicorn
+# json_repair < 0.54 is pinned by langchain-qwq; GHSA-xf7x-x43h-rpqh is an accepted finding (docs/ci.md).
 json_repair
 sqlmodel
 alembic

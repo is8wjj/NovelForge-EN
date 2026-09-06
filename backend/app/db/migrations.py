@@ -10,11 +10,9 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import List, Optional
 
-from alembic import command
 from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
@@ -22,6 +20,8 @@ from loguru import logger
 from sqlalchemy import inspect, text
 from sqlalchemy.engine import Engine
 from sqlmodel import SQLModel
+
+from alembic import command
 
 BASELINE_REVISION = "0001_baseline"
 # Tables that exist at the baseline revision. Legacy (pre-Alembic) databases are

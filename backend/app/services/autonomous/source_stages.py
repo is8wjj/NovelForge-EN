@@ -20,7 +20,7 @@ from loguru import logger
 from sqlalchemy.orm.attributes import flag_modified
 from sqlmodel import Session, select
 
-from app.db.models import Card, CardType, Project
+from app.db.models import Card, CardType
 from app.schemas.bible import ChapterAnalysis, EntityResolutionPlan, LocalArcPlan, NarrativeArchitecture, NarrativeGenome, StoryStructureMap
 from app.schemas.card import CardCreate
 from app.services.autonomous import failures as fail

@@ -237,8 +237,8 @@ def test_01_create_job_is_idempotent_and_persisted(client, state):
 
 
 def test_02_upload_to_storyline_options(fake, state):
-    from app.db.session import engine
     from app.db.models import StorylineCandidate
+    from app.db.session import engine
 
     with Session(engine) as s:
         job = asyncio.run(_runner(s, state["job_id"], fake).run())
@@ -272,8 +272,8 @@ def test_02_upload_to_storyline_options(fake, state):
 
 
 def test_03_select_storyline_then_architecture_and_plan(fake, state):
-    from app.db.session import engine
     from app.db.models import AutonomousNovelJob
+    from app.db.session import engine
     from app.services.autonomous import runner as runner_mod
 
     with Session(engine) as s:
@@ -297,8 +297,8 @@ def test_03_select_storyline_then_architecture_and_plan(fake, state):
 
 
 def test_04_chapter_loop_interrupt_and_resume_without_duplicates(fake, state):
-    from app.db.session import engine
     from app.db.models import AutonomousNovelJob, ChapterPipelineRun
+    from app.db.session import engine
     from app.services.autonomous import runner as runner_mod
     from app.services.forge import provenance
 
@@ -337,8 +337,8 @@ def test_04_chapter_loop_interrupt_and_resume_without_duplicates(fake, state):
 
 
 def test_05_audit_export_and_reports(client, fake, state):
-    from app.db.session import engine
     from app.db.models import AutonomousNovelJob, ExportArtifact
+    from app.db.session import engine
 
     with Session(engine) as s:
         job = s.get(AutonomousNovelJob, state["job_id"])

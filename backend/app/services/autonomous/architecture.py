@@ -18,7 +18,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 from sqlalchemy.orm.attributes import flag_modified
 from sqlmodel import Session, select
 
-from app.db.models import Card, CardType, CanonFact
+from app.db.models import CanonFact, Card, CardType
 from app.schemas.autonomous import AUTONOMOUS_SCHEMA_VERSION, NovelArchitecture
 from app.schemas.card import CardCreate
 from app.services.autonomous import failures as fail
@@ -27,8 +27,7 @@ from app.services.bible.bible_service import BibleService
 from app.services.card_service import CardService
 from app.services.forge import canon as canon_store
 from app.services.forge import firewall as fw
-from app.services.forge import provenance
-from app.services.forge import transfer
+from app.services.forge import provenance, transfer
 
 ARCHITECTURE_PROMPT_VERSION = "autonomous-architecture-1"
 ARCHITECTURE_CARD_TYPE = "Novel Architecture"

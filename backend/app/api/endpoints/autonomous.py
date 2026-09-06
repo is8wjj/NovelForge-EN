@@ -42,7 +42,10 @@ class BudgetSpec(BaseModel):
     max_total_tokens: int = Field(default=0, ge=0)
     max_repair_calls: int = Field(default=0, ge=0)
     max_cost_usd: float = Field(default=0.0, ge=0)
-    price_per_million: Dict[str, float] = Field(default_factory=dict, description="Optional {'input': usd, 'output': usd}; without it cost is reported as unknown")
+    price_per_million: Dict[str, float] = Field(default_factory=dict, description="Optional {'input': usd, 'output': usd} default price; without any price cost is reported as unknown")
+    prices: Dict[str, Dict[str, float]] = Field(default_factory=dict, description="Optional per-LLM-configuration prices {llm_config_id: {'input': usd, 'output': usd}} so a fallback model is costed correctly")
+    stage_limits: Dict[str, Dict[str, int]] = Field(default_factory=dict, description="Optional {stage: {max_calls, max_total_tokens}}")
+    chapter_limits: Dict[str, int] = Field(default_factory=dict, description="Optional {max_calls_per_chapter, max_total_tokens_per_chapter}")
 
 
 class PreflightRequest(BaseModel):
@@ -183,6 +186,9 @@ async def create_job(req: CreateJobRequest, session: Session = Depends(get_sessi
     options = {k: v for k, v in req.model_dump(exclude={"filename", "content_base64", "llm_config_id", "mode", "role_llm_config_ids", "budget", "idempotency_key"}).items() if v not in (None, "", {}, False)}
     options.update(_quality_options(req.quality_preset))
     budget = {k: v for k, v in (req.budget.model_dump() if req.budget else {}).items() if v}
+    problems = budget_mod.validate_budget_spec(budget)
+    if problems:
+        raise HTTPException(status_code=400, detail="Budget is invalid: " + "; ".join(problems))
     try:
         job = runner_mod.create_job(session, filename=filename, data=data, llm_config_id=req.llm_config_id, mode=req.mode, options=options, role_llm_config_ids=req.role_llm_config_ids, budget=budget, idempotency_key=req.idempotency_key or idempotency_key)
     except ValueError as exc:
@@ -325,12 +331,14 @@ def download_scoped(job_id: int, artifact_id: int, session: Session = Depends(ge
     return _artifact_response(row)
 
 
-@router.get("/artifacts/{artifact_id}/download", summary="Download one export artifact (legacy path)")
+@router.get("/artifacts/{artifact_id}/download", summary="Download one export artifact (legacy path; redirects to the job-scoped URL)", deprecated=True)
 def download(artifact_id: int, session: Session = Depends(get_session)):
+    from fastapi.responses import RedirectResponse
+
     row = session.get(ExportArtifact, artifact_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Artifact not found")
-    return _artifact_response(row)
+    return RedirectResponse(url=f"{settings.app.api_prefix}/autonomous/jobs/{int(row.job_id)}/artifacts/{int(row.id)}/download", status_code=307)
 
 
 @router.get("/jobs/{job_id}/report", response_model=Dict[str, Any], summary="Quality / originality / cost report of a finished (or in-progress) job")

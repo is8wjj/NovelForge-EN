@@ -1,0 +1,22 @@
+# Static checks for the backend. The rule set is intentionally small (correctness
+# and bug-prone patterns) so it stays green; see docs/ci.md for the ratchet plan
+# that widens the checked paths and rules over time.
+line-length = 240
+target-version = "py311"
+exclude = ["venv", ".venv", "alembic/versions", "build", "dist"]
+
+[lint]
+select = ["E", "F", "W", "B", "I"]
+ignore = [
+  "E501",  # long lines: the codebase uses long single-line dict literals deliberately
+  "E402",  # tests insert the backend dir into sys.path before importing app.*
+  "E741",  # short names (l, ...) in tight test scopes
+  "B008",  # FastAPI Depends() in defaults
+  "B904",  # raise ... from within except: FastAPI HTTPException style
+  "B905",  # zip strict= is Python 3.10+ only noise here
+  "B017",  # pytest.raises(Exception) is intentional in a few timeout tests
+  "B007",  # unused loop variables in fixtures
+]
+
+[lint.isort]
+known-first-party = ["app", "tests", "main"]

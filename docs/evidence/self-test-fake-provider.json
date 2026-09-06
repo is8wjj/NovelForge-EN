@@ -1,0 +1,674 @@
+[
+  {
+    "at": "2026-09-05T21:32:28",
+    "kind": "epub",
+    "filename_sanitized": "fixture.epub",
+    "bytes": 37490,
+    "sha256": "7780c5f5c1ed5937caa7a4d08a4d3e4891e5b2e329e85ea0f242c5839332e9fc",
+    "job_id": 1
+  },
+  {
+    "at": "2026-09-05T21:32:29",
+    "kind": "analysis",
+    "job_id": 1,
+    "status": "waiting_for_user",
+    "stage": "STORYLINE_SELECTION",
+    "quality_status": null,
+    "chapters_committed": 0,
+    "chapter_count": 0,
+    "lease_generation": 9,
+    "lease_owner": null,
+    "budget": {
+      "calls": {
+        "used": 0,
+        "reserved": 0,
+        "limit": 400
+      },
+      "input_tokens": {
+        "used": 0,
+        "reserved": 0,
+        "limit": 0
+      },
+      "output_tokens": {
+        "used": 0,
+        "reserved": 0,
+        "limit": 800000
+      },
+      "total_tokens": {
+        "used": 0,
+        "reserved": 0,
+        "limit": 4000000
+      },
+      "repair_calls": {
+        "used": 0,
+        "limit": 40
+      },
+      "cost_usd": {
+        "known": null,
+        "reserved": 0.0,
+        "limit": 0.0,
+        "unknown_calls": 0,
+        "status": "unknown"
+      },
+      "usage_estimated_calls": 0,
+      "estimated_cost_usd": null
+    },
+    "warnings": 1,
+    "error_category": null,
+    "ingestion": {
+      "chapters": null,
+      "words": null,
+      "story_fraction": null,
+      "boundary_confidence": null,
+      "ok": true
+    },
+    "ingestion_warnings": 1,
+    "storylines": [
+      {
+        "id": 1,
+        "option_index": 0,
+        "originality_score": 0.0,
+        "rejected": true,
+        "max_similarity_to_others": 0.191
+      },
+      {
+        "id": 2,
+        "option_index": 1,
+        "originality_score": 1.0,
+        "rejected": false,
+        "max_similarity_to_others": 0.188
+      },
+      {
+        "id": 3,
+        "option_index": 2,
+        "originality_score": 1.0,
+        "rejected": false,
+        "max_similarity_to_others": 0.175
+      },
+      {
+        "id": 4,
+        "option_index": 3,
+        "originality_score": 1.0,
+        "rejected": false,
+        "max_similarity_to_others": 0.188
+      },
+      {
+        "id": 5,
+        "option_index": 4,
+        "originality_score": 1.0,
+        "rejected": false,
+        "max_similarity_to_others": 0.175
+      },
+      {
+        "id": 6,
+        "option_index": 5,
+        "originality_score": 1.0,
+        "rejected": false,
+        "max_similarity_to_others": 1.0
+      },
+      {
+        "id": 7,
+        "option_index": 6,
+        "originality_score": 1.0,
+        "rejected": true,
+        "max_similarity_to_others": 1.0
+      },
+      {
+        "id": 8,
+        "option_index": 7,
+        "originality_score": 1.0,
+        "rejected": false,
+        "max_similarity_to_others": 0.191
+      }
+    ],
+    "max_pairwise_similarity": 1.0
+  },
+  {
+    "at": "2026-09-05T21:32:34",
+    "kind": "selection",
+    "job_id": 1,
+    "storyline_id": 3,
+    "originality_score": 1.0,
+    "basis": "highest originality score among non-rejected candidates; tie-break lowest max similarity",
+    "chapter_count": 6,
+    "words_per_chapter": 260
+  },
+  {
+    "at": "2026-09-05T21:32:41",
+    "kind": "run",
+    "job_id": 1,
+    "status": "queued",
+    "stage": "CHAPTER_GENERATION_LOOP",
+    "quality_status": null,
+    "chapters_committed": 2,
+    "chapter_count": 6,
+    "lease_generation": 16,
+    "lease_owner": null,
+    "budget": {
+      "calls": {
+        "used": 0,
+        "reserved": 0,
+        "limit": 400
+      },
+      "input_tokens": {
+        "used": 0,
+        "reserved": 0,
+        "limit": 0
+      },
+      "output_tokens": {
+        "used": 0,
+        "reserved": 0,
+        "limit": 800000
+      },
+      "total_tokens": {
+        "used": 0,
+        "reserved": 0,
+        "limit": 4000000
+      },
+      "repair_calls": {
+        "used": 0,
+        "limit": 40
+      },
+      "cost_usd": {
+        "known": null,
+        "reserved": 0.0,
+        "limit": 0.0,
+        "unknown_calls": 0,
+        "status": "unknown"
+      },
+      "usage_estimated_calls": 0,
+      "estimated_cost_usd": null
+    },
+    "warnings": 3,
+    "error_category": null,
+    "lease_generation_before": 9,
+    "committed_chapters": [
+      1,
+      2
+    ],
+    "until_chapters": 2,
+    "lease_lost": false
+  },
+  {
+    "at": "2026-09-05T21:32:52",
+    "kind": "recover",
+    "job_id": 1,
+    "status": "queued",
+    "stage": "CHAPTER_GENERATION_LOOP",
+    "quality_status": null,
+    "chapters_committed": 2,
+    "chapter_count": 6,
+    "lease_generation": 17,
+    "lease_owner": null,
+    "budget": {
+      "calls": {
+        "used": 0,
+        "reserved": 0,
+        "limit": 400
+      },
+      "input_tokens": {
+        "used": 0,
+        "reserved": 0,
+        "limit": 0
+      },
+      "output_tokens": {
+        "used": 0,
+        "reserved": 0,
+        "limit": 800000
+      },
+      "total_tokens": {
+        "used": 0,
+        "reserved": 0,
+        "limit": 4000000
+      },
+      "repair_calls": {
+        "used": 0,
+        "limit": 40
+      },
+      "cost_usd": {
+        "known": null,
+        "reserved": 0.0,
+        "limit": 0.0,
+        "unknown_calls": 0,
+        "status": "unknown"
+      },
+      "usage_estimated_calls": 0,
+      "estimated_cost_usd": null
+    },
+    "warnings": 3,
+    "error_category": null,
+    "requeued_jobs": 1,
+    "forced_expiry_of_dead_owner": true
+  },
+  {
+    "at": "2026-09-05T21:32:58",
+    "kind": "run",
+    "job_id": 1,
+    "status": "completed",
+    "stage": "DONE",
+    "quality_status": "completed_with_warnings",
+    "chapters_committed": 6,
+    "chapter_count": 6,
+    "lease_generation": 22,
+    "lease_owner": null,
+    "budget": {
+      "calls": {
+        "used": 0,
+        "reserved": 0,
+        "limit": 400
+      },
+      "input_tokens": {
+        "used": 0,
+        "reserved": 0,
+        "limit": 0
+      },
+      "output_tokens": {
+        "used": 0,
+        "reserved": 0,
+        "limit": 800000
+      },
+      "total_tokens": {
+        "used": 0,
+        "reserved": 0,
+        "limit": 4000000
+      },
+      "repair_calls": {
+        "used": 0,
+        "limit": 40
+      },
+      "cost_usd": {
+        "known": null,
+        "reserved": 0.0,
+        "limit": 0.0,
+        "unknown_calls": 0,
+        "status": "unknown"
+      },
+      "usage_estimated_calls": 0,
+      "estimated_cost_usd": null
+    },
+    "warnings": 6,
+    "error_category": null,
+    "lease_generation_before": 17,
+    "committed_chapters": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "until_chapters": null,
+    "lease_lost": false
+  },
+  {
+    "at": "2026-09-05T21:33:04",
+    "kind": "durability",
+    "job_id": 1,
+    "status": "completed",
+    "stage": "DONE",
+    "quality_status": "completed_with_warnings",
+    "chapters_committed": 6,
+    "chapter_count": 6,
+    "lease_generation": 22,
+    "lease_owner": null,
+    "budget": {
+      "calls": {
+        "used": 0,
+        "reserved": 0,
+        "limit": 400
+      },
+      "input_tokens": {
+        "used": 0,
+        "reserved": 0,
+        "limit": 0
+      },
+      "output_tokens": {
+        "used": 0,
+        "reserved": 0,
+        "limit": 800000
+      },
+      "total_tokens": {
+        "used": 0,
+        "reserved": 0,
+        "limit": 4000000
+      },
+      "repair_calls": {
+        "used": 0,
+        "limit": 40
+      },
+      "cost_usd": {
+        "known": null,
+        "reserved": 0.0,
+        "limit": 0.0,
+        "unknown_calls": 0,
+        "status": "unknown"
+      },
+      "usage_estimated_calls": 0,
+      "estimated_cost_usd": null
+    },
+    "warnings": 6,
+    "error_category": null,
+    "lease_generations_seen": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      8,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22
+    ],
+    "duplicate_chapters": [],
+    "duplicate_exports": false,
+    "selected_storylines": 1,
+    "stale_generation_update_rejected": true,
+    "committed_chapters": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ]
+  },
+  {
+    "at": "2026-09-05T21:33:10",
+    "kind": "exports",
+    "job_id": 1,
+    "chapter_count": 6,
+    "artifacts": {
+      "character_guide": {
+        "filename": "option-3-the-signal-engineer-7780c5-1-characters.md",
+        "bytes": 474,
+        "sha256": "5c3b2dbe922e9d432eeef60cc0d44c9ae513759eb268b366c2d2eb431d4f3ec2",
+        "hash_matches_row": true
+      },
+      "docx": {
+        "filename": "option-3-the-signal-engineer-7780c5-1.docx",
+        "bytes": 3096,
+        "sha256": "c28d80e6b967061dbbe04b046f5c1e2e6ac01f41a2824bbde2c8d94f1b112126",
+        "hash_matches_row": true,
+        "structure": {
+          "has_document_xml": true,
+          "heading1_count": 6,
+          "chapter_headings_present": true,
+          "content_types": true
+        }
+      },
+      "epub": {
+        "filename": "option-3-the-signal-engineer-7780c5-1.epub",
+        "bytes": 12763,
+        "sha256": "f02cf74516931b4e2e559bd4c695b9d6421abe84049d5f3b3470120f7c217125",
+        "hash_matches_row": true,
+        "structure": {
+          "mimetype_first_stored": true,
+          "spine_items": 7,
+          "chapter_files": 6,
+          "chapters_in_order": true,
+          "missing_spine_files": [],
+          "nav_and_ncx": true,
+          "has_title_metadata": true
+        }
+      },
+      "markdown": {
+        "filename": "option-3-the-signal-engineer-7780c5-1.md",
+        "bytes": 4618,
+        "sha256": "7535c4637bbde76abf7e027ac8e9f5c41929d83e9093055872e5bc49b558eb86",
+        "hash_matches_row": true,
+        "structure": {
+          "utf8": true,
+          "headings_found": 6,
+          "chapter_headings_present": true,
+          "bytes": 4618
+        }
+      },
+      "report": {
+        "filename": "option-3-the-signal-engineer-7780c5-1-quality-report.json",
+        "bytes": 20396,
+        "sha256": "3ab5090c68cc9154e3b2f8c9c0cc2da6338d38495ef533babc7c0169a96fb593",
+        "hash_matches_row": true,
+        "structure": {
+          "json": true,
+          "keys": [
+            "audit",
+            "chapters",
+            "findings",
+            "originality",
+            "run",
+            "total_words",
+            "unresolved_warnings",
+            "version"
+          ],
+          "chapters_listed": 6
+        }
+      },
+      "synopsis": {
+        "filename": "option-3-the-signal-engineer-7780c5-1-synopsis.md",
+        "bytes": 674,
+        "sha256": "68b807dae7835a4e16ebb0dee38fa738de440642c6a53cb3583a7a919ff8ef9e",
+        "hash_matches_row": true
+      },
+      "text": {
+        "filename": "option-3-the-signal-engineer-7780c5-1.txt",
+        "bytes": 4602,
+        "sha256": "ab7aa2b16ac4448e2ccdc8aba9706dfa5a83d97d1e38fe8322df9c68bdbd4ebc",
+        "hash_matches_row": true,
+        "structure": {
+          "utf8": true,
+          "headings_found": 0,
+          "chapter_headings_present": false,
+          "bytes": 4602
+        }
+      }
+    },
+    "all_valid": false
+  },
+  {
+    "at": "2026-09-05T21:33:16",
+    "kind": "originality",
+    "job_id": 1,
+    "generated_chapters": 6,
+    "generated_words": 842,
+    "source_chapters": 0,
+    "eight_gram_overlap_ratio": 0.0,
+    "shared_long_sentences": 0,
+    "opening_5gram_similarity": 0.0,
+    "ending_5gram_similarity": 0.0,
+    "firewall_passed": null,
+    "firewall_scores": {},
+    "named_entity_findings": null
+  },
+  {
+    "at": "2026-09-05T21:33:22",
+    "kind": "report",
+    "job_id": 1,
+    "status": "completed",
+    "stage": "DONE",
+    "quality_status": "completed_with_warnings",
+    "chapters_committed": 6,
+    "chapter_count": 6,
+    "lease_generation": 22,
+    "lease_owner": null,
+    "budget": {
+      "calls": {
+        "used": 0,
+        "reserved": 0,
+        "limit": 400
+      },
+      "input_tokens": {
+        "used": 0,
+        "reserved": 0,
+        "limit": 0
+      },
+      "output_tokens": {
+        "used": 0,
+        "reserved": 0,
+        "limit": 800000
+      },
+      "total_tokens": {
+        "used": 0,
+        "reserved": 0,
+        "limit": 4000000
+      },
+      "repair_calls": {
+        "used": 0,
+        "limit": 40
+      },
+      "cost_usd": {
+        "known": null,
+        "reserved": 0.0,
+        "limit": 0.0,
+        "unknown_calls": 0,
+        "status": "unknown"
+      },
+      "usage_estimated_calls": 0,
+      "estimated_cost_usd": null
+    },
+    "warnings": 6,
+    "error_category": null,
+    "models_used": [],
+    "invocations": 0,
+    "attempts": 0,
+    "attempt_status": {},
+    "attempt_error_categories": {},
+    "first_attempt_valid_rate": 0.0,
+    "structured_invocations": 0,
+    "structured_first_attempt_valid_rate": 0.0,
+    "schema_repair_attempts": 0,
+    "provider_retry_attempts": 0,
+    "fallback_attempts": 0,
+    "budget_refused_attempts": 0,
+    "usage_reported_attempts": 0,
+    "usage_missing_attempts": 0,
+    "latency_ms": {
+      "p50": null,
+      "max": null
+    },
+    "max_input_tokens_single_attempt": 0,
+    "by_role": {},
+    "quality_summary": {
+      "status": "completed_with_warnings",
+      "total_findings": 11,
+      "blocking_findings": 0,
+      "repaired_chapters": [],
+      "repaired_findings": 0,
+      "unresolved_findings": 0,
+      "auto_repairable_findings": 0,
+      "findings_requiring_replan": 0,
+      "findings_requiring_human_review": 0,
+      "by_severity": {
+        "low": 11
+      },
+      "by_kind": {
+        "stock_phrase": 10,
+        "rhythm_flat": 1
+      },
+      "affected_chapters": []
+    },
+    "recovery_actions": 1
+  },
+  {
+    "at": "2026-09-05T21:36:39",
+    "kind": "exports",
+    "job_id": 1,
+    "chapter_count": 6,
+    "artifacts": {
+      "character_guide": {
+        "filename": "option-3-the-signal-engineer-7780c5-1-characters.md",
+        "bytes": 474,
+        "sha256": "5c3b2dbe922e9d432eeef60cc0d44c9ae513759eb268b366c2d2eb431d4f3ec2",
+        "hash_matches_row": true
+      },
+      "docx": {
+        "filename": "option-3-the-signal-engineer-7780c5-1.docx",
+        "bytes": 3096,
+        "sha256": "c28d80e6b967061dbbe04b046f5c1e2e6ac01f41a2824bbde2c8d94f1b112126",
+        "hash_matches_row": true,
+        "structure": {
+          "has_document_xml": true,
+          "heading1_count": 6,
+          "chapter_headings_present": true,
+          "content_types": true
+        }
+      },
+      "epub": {
+        "filename": "option-3-the-signal-engineer-7780c5-1.epub",
+        "bytes": 12763,
+        "sha256": "f02cf74516931b4e2e559bd4c695b9d6421abe84049d5f3b3470120f7c217125",
+        "hash_matches_row": true,
+        "structure": {
+          "mimetype_first_stored": true,
+          "spine_items": 7,
+          "chapter_files": 6,
+          "chapters_in_order": true,
+          "missing_spine_files": [],
+          "nav_and_ncx": true,
+          "has_title_metadata": true
+        }
+      },
+      "markdown": {
+        "filename": "option-3-the-signal-engineer-7780c5-1.md",
+        "bytes": 4618,
+        "sha256": "7535c4637bbde76abf7e027ac8e9f5c41929d83e9093055872e5bc49b558eb86",
+        "hash_matches_row": true,
+        "structure": {
+          "utf8": true,
+          "headings_found": 6,
+          "chapter_headings_present": true,
+          "bytes": 4618
+        }
+      },
+      "report": {
+        "filename": "option-3-the-signal-engineer-7780c5-1-quality-report.json",
+        "bytes": 20396,
+        "sha256": "3ab5090c68cc9154e3b2f8c9c0cc2da6338d38495ef533babc7c0169a96fb593",
+        "hash_matches_row": true,
+        "structure": {
+          "json": true,
+          "keys": [
+            "audit",
+            "chapters",
+            "findings",
+            "originality",
+            "run",
+            "total_words",
+            "unresolved_warnings",
+            "version"
+          ],
+          "chapters_listed": 6
+        }
+      },
+      "synopsis": {
+        "filename": "option-3-the-signal-engineer-7780c5-1-synopsis.md",
+        "bytes": 674,
+        "sha256": "68b807dae7835a4e16ebb0dee38fa738de440642c6a53cb3583a7a919ff8ef9e",
+        "hash_matches_row": true
+      },
+      "text": {
+        "filename": "option-3-the-signal-engineer-7780c5-1.txt",
+        "bytes": 4602,
+        "sha256": "ab7aa2b16ac4448e2ccdc8aba9706dfa5a83d97d1e38fe8322df9c68bdbd4ebc",
+        "hash_matches_row": true,
+        "structure": {
+          "utf8": true,
+          "headings_found": 6,
+          "chapter_headings_present": true,
+          "bytes": 4602
+        }
+      }
+    },
+    "all_valid": true
+  }
+]

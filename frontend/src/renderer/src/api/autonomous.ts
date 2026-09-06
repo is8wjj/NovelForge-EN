@@ -1,7 +1,19 @@
 import request from './request'
 import { API_BASE_URL } from './request'
+import { artifactDownloadPath } from '@renderer/composables/useAutonomousNovel'
 
 export type AutonomousMode = 'fully_automatic' | 'approval_gates' | 'manual'
+
+export interface BudgetSpec {
+  max_calls?: number
+  max_input_tokens?: number
+  max_output_tokens?: number
+  max_total_tokens?: number
+  max_repair_calls?: number
+  max_cost_usd?: number
+  price_per_million?: { input?: number; output?: number }
+  prices?: Record<string, { input?: number; output?: number }>
+}
 
 export interface CreateJobRequest {
   filename: string
@@ -22,6 +34,70 @@ export interface CreateJobRequest {
   storyline_count?: number
   fallback_llm_config_id?: number
   notes?: string
+  budget?: BudgetSpec
+  idempotency_key?: string
+  preflight_acknowledged?: boolean
+}
+
+export interface PreflightRequest {
+  llm_config_id: number
+  fallback_llm_config_id?: number
+  timeout_seconds?: number
+  check_fallback?: boolean
+}
+
+export interface PreflightCheck {
+  name: string
+  passed: boolean
+  skipped: boolean
+  advisory: boolean
+  latency_ms?: number | null
+  category?: string | null
+  diagnostic?: string | null
+}
+
+export interface PreflightResult {
+  passed: boolean
+  llm_config_id: number
+  provider: string
+  model: string
+  endpoint_class: string
+  latency_ms: number
+  model_availability?: PreflightCheck | null
+  text_check?: PreflightCheck | null
+  structured_check?: PreflightCheck | null
+  usage_reporting: 'reported' | 'missing' | 'unknown'
+  fallback_checked: boolean
+  fallback?: PreflightResult | null
+  warnings: string[]
+  failure_category?: string | null
+  diagnostic?: string | null
+  checks: PreflightCheck[]
+  timestamp: string
+}
+
+export interface BudgetCounter { used: number; reserved?: number; limit: number }
+export interface BudgetSnapshot {
+  calls: BudgetCounter
+  input_tokens: BudgetCounter
+  output_tokens: BudgetCounter
+  total_tokens: BudgetCounter
+  repair_calls: BudgetCounter
+  cost_usd: { known: number | null; reserved: number; limit: number; unknown_calls: number; status: 'unknown' | 'estimated' | 'reported' }
+  usage_estimated_calls: number
+  estimated_cost_usd: number | null
+}
+
+export interface RecoveryEntry {
+  id: number
+  stage: string
+  stage_attempt: number
+  failure_category: string
+  action: string
+  reason: string
+  success: boolean
+  original_model?: string
+  selected_model?: string
 }
 
 export interface StageAttempt {
@@ -55,7 +131,12 @@ export interface AutonomousJob {
   model_calls: number
   input_tokens: number
   output_tokens: number
-  waiting_for?: 'storyline_selection' | 'plan_approval' | 'manuscript_approval' | 'manual_mode' | 'approval' | null
+  waiting_for?: 'storyline_selection' | 'plan_approval' | 'manuscript_approval' | 'manual_mode' | 'approval' | 'budget_exhausted' | 'provider_unavailable' | 'manual_review_required' | 'quality_gate_failed' | 'paused' | null
+  quality_status?: 'completed' | 'completed_with_warnings' | 'quality_gate_failed' | 'manual_review_required' | null
+  quality_summary?: Record<string, unknown> | null
+  budget?: BudgetSnapshot
+  lease?: { owner: string | null; generation: number; expires_at: string | null; heartbeat_at: string | null }
+  recovery?: RecoveryEntry[]
   created_at?: string | null
   updated_at?: string | null
   started_at?: string | null
@@ -91,6 +172,9 @@ const opts = { showLoading: false }
 export function createJob(body: CreateJobRequest): Promise<JobResponse> {
   return (request as any).request({ method: 'POST', url: '/api/autonomous/jobs', data: body, showLoading: false, timeout: 300_000 })
 }
+export function runPreflight(body: PreflightRequest): Promise<PreflightResult> {
+  return (request as any).request({ method: 'POST', url: '/api/autonomous/preflight', data: body, showLoading: false, timeout: 320_000 })
+}
 export function listJobs(limit = 20): Promise<Array<AutonomousJob & { active: boolean }>> {
   return request.get('/autonomous/jobs', { limit }, '/api', opts)
 }
@@ -124,6 +208,8 @@ export function listArtifacts(jobId: number): Promise<ExportArtifactInfo[]> {
 export function getReport(jobId: number): Promise<Record<string, any>> {
   return request.get(`/autonomous/jobs/${jobId}/report`, undefined, '/api', opts)
 }
-export function artifactDownloadUrl(artifactId: number): string {
+export function artifactDownloadUrl(artifactId: number, jobId?: number): string {
+  // Job-scoped route; the unscoped legacy path only redirects here.
+  if (jobId != null) return `${API_BASE_URL}${artifactDownloadPath(artifactId, jobId)}`
   return `${API_BASE_URL}/autonomous/artifacts/${artifactId}/download`
 }

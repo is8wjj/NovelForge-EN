@@ -1,6 +1,6 @@
-﻿from typing import Optional, Any, List
+from typing import Optional, Any, List
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class WorkflowBase(BaseModel):
@@ -32,8 +32,7 @@ class WorkflowUpdate(BaseModel):
 class WorkflowRead(WorkflowBase):
     id: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class WorkflowRunRead(BaseModel):
@@ -51,11 +50,7 @@ class WorkflowRunRead(BaseModel):
     finished_at: Optional[datetime] = None  # Added finish time
     workflow: Optional["WorkflowRead"] = None  # Include basic info
 
-    class Config:
-        from_attributes = True
-        json_encoders = {
-            datetime: lambda v: v.isoformat() if v else None
-        }
+    model_config = ConfigDict(from_attributes=True)
 
 
 class RunRequest(BaseModel):

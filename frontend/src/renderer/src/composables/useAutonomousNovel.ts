@@ -7,10 +7,11 @@
  * - selection requires a non-rejected option and a chapter count in a sane range
  */
 import { computed, getCurrentInstance, onBeforeUnmount, ref } from 'vue'
-import type { AutonomousJob, ChapterPreviewInfo, CreateJobRequest, ExportArtifactInfo, JobResponse, StorylineOption } from '@renderer/api/autonomous'
+import type { AutonomousJob, ChapterPreviewInfo, CreateJobRequest, ExportArtifactInfo, JobResponse, PreflightRequest, PreflightResult, StorylineOption } from '@renderer/api/autonomous'
 
 export interface AutonomousApi {
   createJob: (body: CreateJobRequest) => Promise<JobResponse>
+  runPreflight: (body: PreflightRequest) => Promise<PreflightResult>
   getJob: (jobId: number) => Promise<JobResponse>
   listJobs: (limit?: number) => Promise<Array<AutonomousJob & { active: boolean }>>
   listStorylines: (jobId: number, includeRejected?: boolean) => Promise<StorylineOption[]>
@@ -26,6 +27,11 @@ export interface AutonomousApi {
 }
 
 export type Screen = 'upload' | 'analysis' | 'choose' | 'generating' | 'finished'
+
+/** Job-scoped artifact path (relative to the API base); the unscoped legacy route only redirects here. */
+export function artifactDownloadPath(artifactId: number, jobId: number): string {
+  return `/autonomous/jobs/${jobId}/artifacts/${artifactId}/download`
+}
 
 export const ANALYSIS_STAGES = ['INGEST', 'SOURCE_ANALYSIS', 'ANALYSIS_VERIFICATION', 'BOOK_STRUCTURE', 'FINGERPRINT_BUILD', 'EXAMPLE_LIBRARY_BUILD', 'STORYLINE_GENERATION']
 export const GENERATION_STAGES = ['NOVEL_ARCHITECTURE', 'BIBLE_BUILD', 'CHAPTER_PLAN_BUILD', 'NOVEL_PREFLIGHT', 'CHAPTER_GENERATION_LOOP', 'WHOLE_NOVEL_AUDIT', 'GLOBAL_REPAIR', 'EXPORT']
@@ -61,7 +67,11 @@ export function useAutonomousNovel(api: AutonomousApi, opts: { pollMs?: number }
   const file = ref<{ name: string; size: number; base64: string } | null>(null)
   const selectedStorylineId = ref<number | null>(null)
   const chapterCount = ref<number>(24)
+  const preflight = ref<PreflightResult | null>(null)
+  const pollFailures = ref(0)
   let timer: ReturnType<typeof setTimeout> | null = null
+  let startedForKey: string | null = null
+  const MAX_POLL_BACKOFF = 8
 
   const screen = computed<Screen>(() => screenFor(job.value))
   const isActive = computed(() => !!job.value && (active.value || ACTIVE_STATUSES.has(job.value.status)))
@@ -87,12 +97,15 @@ export function useAutonomousNovel(api: AutonomousApi, opts: { pollMs?: number }
     stopPolling()
     if (!job.value) return
     if (!isActive.value) return
-    timer = setTimeout(() => void refresh(), pollMs)
+    // Transient failures back off exponentially (bounded) instead of hammering or giving up.
+    const factor = Math.min(2 ** pollFailures.value, MAX_POLL_BACKOFF)
+    timer = setTimeout(() => void refresh(), pollMs * factor)
   }
 
   async function applyResponse(res: JobResponse) {
     job.value = res.job
     active.value = res.active
+    pollFailures.value = 0
     const s = screenFor(res.job)
     if (s === 'choose' && storylines.value.length === 0) storylines.value = await api.listStorylines(res.job.id, true)
     if (s === 'generating' || s === 'finished') {
@@ -110,8 +123,11 @@ export function useAutonomousNovel(api: AutonomousApi, opts: { pollMs?: number }
     try {
       await applyResponse(await api.getJob(job.value.id))
     } catch (e) {
+      pollFailures.value += 1
       error.value = errorMessage(e)
-      schedulePoll()
+      // Keep the last known job so the screen does not collapse; keep polling with backoff.
+      stopPolling()
+      if (job.value) timer = setTimeout(() => void refresh(), pollMs * Math.min(2 ** pollFailures.value, MAX_POLL_BACKOFF))
     }
   }
 
@@ -133,15 +149,42 @@ export function useAutonomousNovel(api: AutonomousApi, opts: { pollMs?: number }
   async function pickFile(f: File) {
     const base64 = await api.fileToBase64(f)
     file.value = { name: f.name, size: f.size, base64 }
+    preflight.value = null
+    startedForKey = null
+  }
+
+  async function runPreflight(params: PreflightRequest) {
+    if (busy.value) return null
+    busy.value = 'preflight'
+    error.value = null
+    try {
+      preflight.value = await api.runPreflight(params)
+    } catch (e) {
+      preflight.value = null
+      error.value = errorMessage(e)
+    } finally {
+      busy.value = null
+    }
+    return preflight.value
+  }
+
+  /** Stable per-file idempotency key so a double click or a retried request cannot create two jobs. */
+  function submissionKey(params: Omit<CreateJobRequest, 'filename' | 'content_base64'>): string {
+    const base = `${file.value?.name}|${file.value?.size}|${params.llm_config_id}|${params.mode || ''}|${params.quality_preset || ''}`
+    let h = 0
+    for (let i = 0; i < base.length; i++) h = (h * 31 + base.charCodeAt(i)) >>> 0
+    return `ui-${h.toString(16)}-${(file.value?.base64 || '').length.toString(16)}`
   }
 
   async function start(params: Omit<CreateJobRequest, 'filename' | 'content_base64'>) {
-    if (!file.value || busy.value) return
+    if (!file.value || busy.value || job.value) return
     busy.value = 'start'
     error.value = null
+    const key = startedForKey || submissionKey(params)
+    startedForKey = key
     try {
       storylines.value = []
-      await applyResponse(await api.createJob({ ...params, filename: file.value.name, content_base64: file.value.base64 }))
+      await applyResponse(await api.createJob({ ...params, idempotency_key: key, filename: file.value.name, content_base64: file.value.base64 }))
     } catch (e) {
       error.value = errorMessage(e)
     } finally {
@@ -190,13 +233,16 @@ export function useAutonomousNovel(api: AutonomousApi, opts: { pollMs?: number }
     report.value = null
     selectedStorylineId.value = null
     error.value = null
+    preflight.value = null
+    pollFailures.value = 0
+    startedForKey = null
   }
 
   if (getCurrentInstance()) onBeforeUnmount(stopPolling)
 
   return {
-    job, active, storylines, chapters, artifacts, report, jobs, busy, error, file, selectedStorylineId, chapterCount,
+    job, active, storylines, chapters, artifacts, report, jobs, busy, error, file, selectedStorylineId, chapterCount, preflight, pollFailures,
     screen, isActive, selectedOption, acceptedOptions, recommendedRange, chapterCountWarning, canSelect, estimatedWords,
-    pickFile, start, refresh, open, loadJobs, reloadStorylines, confirmSelection, action, reset, stopPolling,
+    pickFile, runPreflight, start, refresh, open, loadJobs, reloadStorylines, confirmSelection, action, reset, stopPolling,
   }
 }

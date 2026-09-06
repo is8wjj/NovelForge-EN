@@ -24,11 +24,16 @@ env/
 !ROADMAP.md
 !rules/**/*.md
 !rules/**/*.mdc
+# Project documentation is source (operations, security boundary, qualification procedure).
+!docs/**/*.md
 
 
 primitive_models/
-docs/
+# docs/ is tracked (see whitelist above); local scratch goes to .hoplite/scratch or /tmp.
 .pytest_cache/
+.coverage
+coverage.xml
+.ruff_cache/
 
 .windsurf/
 .windsurfrules

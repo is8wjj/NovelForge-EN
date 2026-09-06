@@ -73,10 +73,11 @@ app = FastAPI(
 from app.core.middleware.workflow import WorkflowHeaderMiddleware
 app.add_middleware(WorkflowHeaderMiddleware)
 
-# Configure CORS middleware
+# Configure CORS middleware (local-only policy by default; see AppSettings.cors_origins)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.app.get_cors_origins_list(),
+    allow_origin_regex=settings.app.get_cors_origin_regex(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -96,12 +97,14 @@ def read_root():
 
 if __name__ == "__main__":
     import uvicorn
-    # Add reload=True so the server auto-reloads when code changes
-    # Configure a shorter graceful shutdown timeout for quick Ctrl+C exit
+    # Local, single-user application: binds to loopback unless HOST is set explicitly.
+    # There is no authentication layer, so exposing it on other interfaces is unsupported.
+    if not settings.app.is_loopback_host():
+        print(f"WARNING: HOST={settings.app.host} exposes an unauthenticated API beyond this machine; this deployment mode is unsupported.")
     uvicorn.run(
         "main:app",
-        host="0.0.0.0",
-        port=54321,
+        host=settings.app.host,
+        port=settings.app.port,
         reload=True,
         timeout_graceful_shutdown=1,
     )

@@ -16,7 +16,7 @@ import uuid
 import zipfile
 from datetime import datetime
 from html import escape
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Optional, Sequence, Tuple
 
 from sqlmodel import Session, select
 
@@ -63,7 +63,7 @@ def build_epub(meta: Dict[str, str], chapters: Sequence[Tuple[int, str, str]], *
         manifest = ['<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>', '<item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>', '<item id="css" href="style.css" media-type="text/css"/>', '<item id="title" href="title.xhtml" media-type="application/xhtml+xml"/>']
         spine = ['<itemref idref="title"/>']
         nav_items = ['<li><a href="title.xhtml">Title Page</a></li>']
-        ncx_points = [f'<navPoint id="np-title" playOrder="1"><navLabel><text>Title Page</text></navLabel><content src="title.xhtml"/></navPoint>']
+        ncx_points = ['<navPoint id="np-title" playOrder="1"><navLabel><text>Title Page</text></navLabel><content src="title.xhtml"/></navPoint>']
         zf.writestr("OEBPS/title.xhtml", _xhtml(meta["title"], f"<h1>{escape(meta['title'])}</h1><p style='text-align:center'>{escape(meta['author'])}</p>" + (f"<div class='front'>{_paragraphs_html(front_matter)}</div>" if front_matter else ""), lang=lang))
         order = 2
         for n, title, text in chapters:
@@ -140,7 +140,7 @@ def build_text(meta: Dict[str, str], chapters: Sequence[Tuple[int, str, str]]) -
 def synopsis_and_guide(session: Session, project_id: int) -> Tuple[str, str]:
     bible = BibleService(session)
     foundation = _c(bible.singleton(project_id, "Story Foundation"))
-    lines = [f"# Synopsis", "", foundation.get("core_premise") or "", "", f"**Central question:** {foundation.get('central_dramatic_question') or ''}", f"**Stakes:** {foundation.get('stakes') or ''}", ""]
+    lines = ["# Synopsis", "", foundation.get("core_premise") or "", "", f"**Central question:** {foundation.get('central_dramatic_question') or ''}", f"**Stakes:** {foundation.get('stakes') or ''}", ""]
     for card in bible.cards_of_type(project_id, "Chapter Text"):
         c = _c(card)
         if c.get("summary"):

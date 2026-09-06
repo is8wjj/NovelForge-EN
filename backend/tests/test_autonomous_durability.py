@@ -11,7 +11,7 @@ import asyncio
 import os
 import sys
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import pytest
 from pydantic import BaseModel
@@ -221,27 +221,28 @@ def test_budget_boundary_and_reconcile(app_client):
 
     with Session(engine) as s:
         job = _job(s, budget={"max_calls": 2, "max_total_tokens": 1000})
-        r1 = budget.reserve(s, job.id, role="drafter", stage="X", estimated_tokens=400)
-        r2 = budget.reserve(s, job.id, role="drafter", stage="X", estimated_tokens=400)
+        r1 = budget.reserve(s, job.id, role="drafter", stage="X", estimated_input_tokens=300, requested_output_tokens=100)
+        r2 = budget.reserve(s, job.id, role="drafter", stage="X", estimated_input_tokens=300, requested_output_tokens=100)
+        assert r1.tokens == 400 and r2.tokens == 400  # worst case (input + full output) reserved, not half
         with pytest.raises(budget.BudgetExceeded):  # one over max_calls
-            budget.reserve(s, job.id, role="drafter", stage="X", estimated_tokens=1)
+            budget.reserve(s, job.id, role="drafter", stage="X", estimated_input_tokens=1, requested_output_tokens=1)
         budget.reconcile(s, r1, input_tokens=300, output_tokens=50, succeeded=True)
         budget.reconcile(s, r2, input_tokens=300, output_tokens=50, succeeded=False)  # failed attempt still charged
         s.refresh(job)
         assert job.model_calls == 2 and job.reserved_calls == 0 and job.reserved_tokens == 0 and job.input_tokens == 600 and job.output_tokens == 100
         with pytest.raises(budget.BudgetExceeded):
-            budget.reserve(s, job.id, role="drafter", stage="X", estimated_tokens=1)
+            budget.reserve(s, job.id, role="drafter", stage="X", estimated_input_tokens=1, requested_output_tokens=1)
         # Raising the budget on resume lets it continue.
         job.budget = {"max_calls": 3, "max_total_tokens": 1000}
         s.add(job)
         s.commit()
-        r3 = budget.reserve(s, job.id, role="drafter", stage="X", estimated_tokens=300)  # exactly at the token boundary
-        assert r3.tokens == 300
+        r3 = budget.reserve(s, job.id, role="drafter", stage="X", estimated_input_tokens=200, requested_output_tokens=100, min_output_tokens=1)  # exactly at the token boundary
+        assert r3.tokens == 300 and r3.max_output_tokens == 100
         with pytest.raises(budget.BudgetExceeded):
-            budget.reserve(s, job.id, role="repair_editor", stage="X", estimated_tokens=1)
+            budget.reserve(s, job.id, role="repair_editor", stage="X", estimated_input_tokens=1, requested_output_tokens=1)
         budget.reconcile(s, r3, input_tokens=1, output_tokens=1, succeeded=True)
         snap = budget.usage_snapshot(s, job)
-        assert snap["calls"]["used"] == 3 and snap["estimated_cost_usd"] is None  # cost unknown without a price table
+        assert snap["calls"]["used"] == 3 and snap["estimated_cost_usd"] is None and snap["cost_usd"]["status"] == "unknown"  # cost unknown without a price table
 
 
 def test_budget_repair_limit_and_concurrent_reservation(app_client):
@@ -250,11 +251,11 @@ def test_budget_repair_limit_and_concurrent_reservation(app_client):
 
     with Session(engine) as s:
         job = _job(s, budget={"max_repair_calls": 1, "max_calls": 5})
-        r = budget.reserve(s, job.id, role="repair_editor", stage="GLOBAL_REPAIR:ch1", estimated_tokens=10)
+        r = budget.reserve(s, job.id, role="repair_editor", stage="GLOBAL_REPAIR:ch1", estimated_input_tokens=5, requested_output_tokens=5, min_output_tokens=1)
         budget.reconcile(s, r, input_tokens=5, output_tokens=5, succeeded=True)
         with pytest.raises(budget.BudgetExceeded):
-            budget.reserve(s, job.id, role="repair_editor", stage="GLOBAL_REPAIR:ch2", estimated_tokens=10)
-        budget.reserve(s, job.id, role="drafter", stage="CH", estimated_tokens=10)  # non-repair role still allowed
+            budget.reserve(s, job.id, role="repair_editor", stage="GLOBAL_REPAIR:ch2", estimated_input_tokens=5, requested_output_tokens=5, min_output_tokens=1)
+        budget.reserve(s, job.id, role="drafter", stage="CH", estimated_input_tokens=5, requested_output_tokens=5, min_output_tokens=1)  # non-repair role still allowed
 
     # Concurrent reservations from two sessions never exceed max_calls.
     with Session(engine) as s:
@@ -265,7 +266,7 @@ def test_budget_repair_limit_and_concurrent_reservation(app_client):
     for _ in range(6):
         with Session(engine) as s:
             try:
-                budget.reserve(s, jid, role="drafter", stage="X", estimated_tokens=1)
+                budget.reserve(s, jid, role="drafter", stage="X", estimated_input_tokens=1, requested_output_tokens=1, min_output_tokens=1)
                 ok += 1
             except budget.BudgetExceeded:
                 refused += 1
@@ -274,9 +275,8 @@ def test_budget_repair_limit_and_concurrent_reservation(app_client):
 
 # ---------------------------------------------------------------- telemetry
 def _client(session: Session, job, provider_call, **kw):
-    from app.services.autonomous.model_client import InvocationRecorder, LLMModelClient
-
     from app.db.session import engine
+    from app.services.autonomous.model_client import InvocationRecorder, LLMModelClient
 
     recorder = InvocationRecorder(job_id=job.id, session_factory=lambda: Session(engine))
     return LLMModelClient(session, default_llm_config_id=job.llm_config_id, recorder=recorder, job_id=job.id, provider_call=provider_call, budget_session_factory=lambda: Session(engine), **kw)

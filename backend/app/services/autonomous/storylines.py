@@ -16,14 +16,12 @@ Gates (all deterministic, model-independent):
 
 from __future__ import annotations
 
-import json
-import re
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from sqlmodel import Session, select
 
 from app.db.models import StorylineCandidate
-from app.schemas.autonomous import AUTONOMOUS_SCHEMA_VERSION, StorylineOption, StorylineOptionSet
+from app.schemas.autonomous import AUTONOMOUS_SCHEMA_VERSION, StorylineOptionSet
 from app.services.autonomous import failures as fail
 from app.services.autonomous.model_client import ModelClient
 from app.services.bible.bible_service import BibleService
